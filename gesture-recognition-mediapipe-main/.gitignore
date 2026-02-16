@@ -1,0 +1,11 @@
+
+hisorylog.txt
+model/__pycache__/
+utils/__pycache__/
+View/__pycache__/
+View/Face/__pycache__/
+View/Gesture/__pycache__/
+View/Face/__pycache__/
+View/Gesture/__pycache__/
+*.pyc
+data/user_db/representations_vgg_face.pkl
