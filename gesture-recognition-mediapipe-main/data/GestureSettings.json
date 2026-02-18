@@ -1,1 +1,13 @@
-{"GestureSettings": {"Trigger": "Rock", "Alarm Reset": "Live-Long", "Start": "Okay", "Stop": "Stop", "End production": "Thumbs-DOWN"}, "keypoints": ["Okay", "Peace", "Thumbs-UP", "Thumbs-DOWN", "Call me", "Stop", "Rock", "Live-Long", "Fist"], "GlobalSettings": {"triggertime": 1.0, "gesturetime": 10.0, "password": "63a9f0ea7bb98050796b649e85481845"}, "plc_info": {"ip": "192.168.0.1", "rack": 0, "slot": 1, "db_number": 1, "start_addres": 0, "size": 1}}
+{
+  "picrawler_info": {
+    "init_angles": null,
+    "ip_address": "PICRAWLER_IP_ADDRESS",
+    "port": 5005
+  },
+  "gesture_mapping": {
+    "peace": "wave_hand",
+    "thumbs_up": "excited",
+    "open_hand": "stand",
+    "closed_hand": "sit"
+  }
+}
