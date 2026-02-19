@@ -100,7 +100,7 @@ class PicrawlerServer:
         except KeyboardInterrupt:
             print("Shutting down server...")
         finally:
-            sever_socket.close()
+            server_socket.close()
             self.is_running = False
 
 if __name__ == "__main__":

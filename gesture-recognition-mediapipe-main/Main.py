@@ -3,6 +3,7 @@ from View import GestureSettings
 from View import Settings
 from utils import *
 from View.Settings.PasswordAccess import AccessPassword
+from utils.picrawler_connection import PiCrawlerConnect
 import dearpygui.dearpygui as dpg
 import time
 import threading
@@ -11,6 +12,45 @@ import sys
 inicio = time.time()
 loading = True
 theme = Theme()
+
+
+# Adapter to provide the minimal PLC-like interface expected by GestureDetection
+class PiCrawlerAdapter:
+    def __init__(self, piconnect):
+        self.piconnect = piconnect
+        self.trigger_state = False
+
+    def writeDB(self, byte, bit, value):
+        # emulate PLC bit writes for trigger state (bit 0)
+        try:
+            if bit == 0:
+                self.trigger_state = bool(value)
+                print(f"[PiCrawlerAdapter] trigger_state set to {self.trigger_state}")
+            else:
+                # store or ignore other bits for now
+                print(f"[PiCrawlerAdapter] writeDB byte={byte} bit={bit} value={value}")
+        except Exception as e:
+            print("[PiCrawlerAdapter] writeDB error:", e)
+
+    def sendCommand(self, byte, bit):
+        # Map PLC bits to PiCrawler action names (customize as needed)
+        mapping = {
+            1: 'sit',        # Stop
+            2: 'stand',      # Start
+            3: 'wave_hand',  # End production
+            4: 'excited'     # Alarm Reset
+        }
+        action = mapping.get(bit)
+        if not action:
+            print(f"[PiCrawlerAdapter] No action mapped for bit {bit}")
+            return False
+
+        try:
+            print(f"[PiCrawlerAdapter] Executing action '{action}' for bit {bit}")
+            return self.piconnect.executeAction(action)
+        except Exception as e:
+            print("[PiCrawlerAdapter] sendCommand error:", e)
+            return False
 
 def loading():
     dpg.create_context()
@@ -43,9 +83,10 @@ t1 = threading.Thread(target=loading)
 t1.start()
 time.sleep(3)
 dpg.set_value("loading", 0.10); dpg.configure_item("loading", overlay="10%")
-plc_connect = PLConnect()
+dpc = PiCrawlerConnect()
+picrawler_adapter = PiCrawlerAdapter(dpc)
 dpg.set_value("loading", 0.20); dpg.configure_item("loading", overlay="20%")
-detection = GestureDetection(plc_connection=plc_connect)
+detection = GestureDetection(pi_connection=picrawler_adapter)
 dpg.set_value("loading", 0.30); dpg.configure_item("loading", overlay="30%")
 
 if(detection.GetListOfCameras() == False):

@@ -14,7 +14,7 @@ import os
 mp_hands = mp.solutions.hands
 
 class GestureDetection():
-    def __init__(self, plc_connection, src=0, name="WebCamVideoStream"):
+    def __init__(self, pi_connection, src=0, name="WebCamVideoStream"):
         self.hands = mp_hands.Hands(
         static_image_mode=False,
         max_num_hands=1,
@@ -40,7 +40,7 @@ class GestureDetection():
         (self.grabbed, self.frame) = self.stream.read()
         self.stopped = False
         self.switch = "Gesture"
-        self.plc_connection = plc_connection
+        self.pi_connection = pi_connection
 
     # Prepocess functions of landmarks and arguments
     def draw_landmarks(self, image, landmark_point):
@@ -390,7 +390,7 @@ class GestureDetection():
                                 dpg.configure_item("ProgressBar", overlay="Trigger ON")
                                 self.history.save("Trigger command received")
                                 self.trigered = True
-                                self.plc_connection.writeDB(0, 0, True)
+                                self.pi_connection.writeDB(0, 0, True)
                                 self.timemark = time.time()
                                 dpg.set_value("ProgressBar", 1)
                             else:
@@ -417,15 +417,15 @@ class GestureDetection():
             else:
                 if command != None:
                     self.history.save(command + " command received")
-                    self.plc_connection.sendCommand(0, self.mapBit(command))
+                    self.pi_connection.sendCommand(0, self.mapBit(command))
                     
                 #dpg.set_value("Trigger", "Trigger OFF")
                 dpg.configure_item("ProgressBar", overlay="Trigger OFF")
                 self.history.save("Gesture time out")
                 self.timemark = 0.0
                 self.trigered = False
-                self.plc_connection.writeDB(0, 0, False)
-                #self.plc_connection.writeDB(0, self.mapBit(command), False)
+                self.pi_connection.writeDB(0, 0, False)
+                #self.pi_connection.writeDB(0, self.mapBit(command), False)
                 dpg.set_value("Gesture", "")
                 
     def setupFaceModel(self, frame):
