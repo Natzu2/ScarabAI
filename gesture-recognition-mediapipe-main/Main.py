@@ -43,9 +43,9 @@ t1 = threading.Thread(target=loading)
 t1.start()
 time.sleep(3)
 dpg.set_value("loading", 0.10); dpg.configure_item("loading", overlay="10%")
-plc_connect = PLConnect()
+plc_connect = PiCrawlerConnect()
 dpg.set_value("loading", 0.20); dpg.configure_item("loading", overlay="20%")
-detection = GestureDetection(plc_connection=plc_connect)
+detection = GestureDetection(plc_connect = PiCrawlerConnect())
 dpg.set_value("loading", 0.30); dpg.configure_item("loading", overlay="30%")
 
 if(detection.GetListOfCameras() == False):
