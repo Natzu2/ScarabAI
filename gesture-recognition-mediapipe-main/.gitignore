@@ -8,4 +8,4 @@ View/Gesture/__pycache__/
 View/Face/__pycache__/
 View/Gesture/__pycache__/
 *.pyc
-data/user_db/representations_vgg_face.pkl
+data/user_db/ds_model_vggface_detector_opencv_aligned_normalization_base_expand_0.pkl

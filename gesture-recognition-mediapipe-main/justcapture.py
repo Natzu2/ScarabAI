@@ -8,7 +8,11 @@ import json
 
 import cv2 as cv
 import numpy as np
+
+# New imports
 import mediapipe as mp
+from mediapipe.tasks.python import vision
+from mediapipe.tasks import python
 
 from utils import CvFpsCalc
 from model import KeyPointClassifier
@@ -64,13 +68,40 @@ def main():
     cap.set(cv.CAP_PROP_FRAME_HEIGHT, cap_height)
 
     # Model load #############################################################
-    mp_hands = mp.solutions.hands
-    hands = mp_hands.Hands(
-        static_image_mode=use_static_image_mode,
-        max_num_hands=1,
-        min_detection_confidence=min_detection_confidence,
+
+    # Path to model, you'll need this since the api doesn't exist anymore
+    model_path = "hand_landmarker.task"
+
+    # Base options
+    base_options = python.BaseOptions(model_asset_path=model_path)
+
+    # Choose running mode based on your old static_image_mode flag
+    running_mode = (
+        vision.RunningMode.IMAGE
+        if use_static_image_mode
+        else vision.RunningMode.VIDEO
+    )
+
+    options = vision.HandLandmarkerOptions(
+        base_options=base_options,
+        running_mode=running_mode,
+        num_hands=1,
+        min_hand_detection_confidence=min_detection_confidence,
+        min_hand_presence_confidence=min_tracking_confidence,
         min_tracking_confidence=min_tracking_confidence,
     )
+
+    hands = vision.HandLandmarker.create_from_options(options)
+
+
+    ## Legacy code, for reference only
+    # mp_hands = mp.solutions.hands
+    # hands = mp_hands.Hands(
+    #     static_image_mode=use_static_image_mode,
+    #     max_num_hands=1,
+    #     min_detection_confidence=min_detection_confidence,
+    #     min_tracking_confidence=min_tracking_confidence,
+    # )
 
     keypoint_classifier = KeyPointClassifier()
 
@@ -131,7 +162,8 @@ def main():
         image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
 
         image.flags.writeable = False
-        results = hands.process(image)
+        timestamp_ms = int(time.time() * 1000)
+        results = hands.detect_for_video(image, timestamp_ms)
         image.flags.writeable = True
 
         #  ####################################################################
