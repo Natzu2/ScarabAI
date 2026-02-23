@@ -30,8 +30,6 @@ class PiCrawlerConnect:
         # Only attempt to import picrawler on Raspberry Pi
         if self.is_raspberry_pi:
             try:
-                if TYPE_CHECKING:
-                    from picrawler import Picrawler
                 from picrawler import Picrawler
                 self.Picrawler = Picrawler
                 self.picrawler_available = True
