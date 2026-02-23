@@ -1,13 +1,13 @@
-import socket
+"""import socket
 import json
 import time
 from picrawler import Picrawler
 from threading import Thread
 
 class PicrawlerServer:
-    """A server running on Rapsberry Pi that accepts command from the networked clients.
+    A server running on Rapsberry Pi that accepts command from the networked clients.
         Install on Pi: sudo python 3 picrawler_server.py
-    """
+    
 
     def __init__(self, port=5005):
         self.port = port
@@ -16,7 +16,7 @@ class PicrawlerServer:
 
 
     def initialize_crawler(self):
-        """Initialize the Picrawler instance."""
+        Initialize the Picrawler instance.
         try:
             self.crawler = Picrawler()
             time.sleep(1)  # Allow time for the crawler to initialize
@@ -27,7 +27,7 @@ class PicrawlerServer:
             return False
         
     def handle_client(self,client_socket, address):
-        """Handle incoming client connections and commands."""
+        Handle incoming client connections and commands.
         print(f"Client connected from {address}")
 
         try:
@@ -48,7 +48,7 @@ class PicrawlerServer:
             print(f"Client {address} disconnected.")
 
     def process_command(self, command):
-        """process the received command and execute corresponding actions on the Picrawler."""
+        process the received command and execute corresponding actions on the Picrawler.
         try:
             cmd_type = command.get("type")
             
@@ -77,7 +77,7 @@ class PicrawlerServer:
         
 
     def start_server(self):
-        """Start the server to listen for incoming client connections."""
+        Start the server to listen for incoming client connections.
         if not self.initialize_crawler():
             return
         
@@ -106,3 +106,4 @@ class PicrawlerServer:
 if __name__ == "__main__":
     server = PicrawlerServer(port=5005)
     server.start_server()
+    """
