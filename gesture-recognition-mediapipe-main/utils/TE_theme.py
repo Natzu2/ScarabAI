@@ -6,8 +6,8 @@ class Theme:
         self.catgory = mvThemeCat_Core
     def getTheme(self):
         with font_registry():
-            default_font = add_font("data/Montserrat-Regular.ttf", 24, tag="ttf-menu")
-            hipper_font = add_font("data/Montserrat-Regular.ttf", 45, tag="tff-commands")
+            default_font = add_font("data/data/Montserrat-Regular.ttf", 24, tag="ttf-menu")
+            hipper_font = add_font("data/data/Montserrat-Regular.ttf", 45, tag="tff-commands")
         with theme() as global_theme:
             with theme_component(mvAll):
                 #add_theme_color(mvThemeCol_Text, (0,0,0,255), category=self.catgory)

@@ -100,7 +100,7 @@ class FaceSettings:
             delete_item(user_data[1])
             try:
                 os.remove(path)
-                model = "data/user_db/representations_vgg_face.pkl"
+                model = "data/user_db/ds_model_vggface_detector_opencv_aligned_normalization_base_expand_0.pkl"
                 os.remove(model)
                 texture_data, frame = self.detection.firsFrame()
                 self.detection.setupFaceModel(frame)
@@ -179,7 +179,7 @@ class FaceSettings:
             set_value("trainProgress", 0.45); dpg.configure_item("trainProgress", overlay="45%")
             t.sleep(0.5)
             try:
-                path = "data/user_db/representations_vgg_face.pkl"
+                path = "data/user_db/ds_model_vggface_detector_opencv_aligned_normalization_base_expand_0.pkl"
                 os.remove(path)
                 set_value("trainProgress", 0.60); dpg.configure_item("trainProgress", overlay="60%")
                 t.sleep(0.5)

@@ -2,7 +2,12 @@ import copy
 import itertools
 import cv2 as cv
 import numpy as np
+
+# New stuff below the ol' reliable
 import mediapipe as mp
+from mediapipe.tasks.python import vision
+from mediapipe.tasks import python
+
 import time
 import json
 from deepface import DeepFace
@@ -11,16 +16,31 @@ import dearpygui.dearpygui as dpg
 from model import KeyPointClassifier
 from pygrabber.dshow_graph import FilterGraph
 import os
-mp_hands = mp.solutions.hands
+#mp_hands = mp.solutions.hands #Old implementation
 
 class GestureDetection():
-    def __init__(self, plc_connection, src=0, name="WebCamVideoStream"):
-        self.hands = mp_hands.Hands(
-        static_image_mode=False,
-        max_num_hands=1,
-        min_detection_confidence=0.7,
-        min_tracking_confidence=0.5,
+    def __init__(self, pi_connection, src=0, name="WebCamVideoStream"):
+
+        model_path = "hand_landmarker.task"   # Path in the source folder
+
+        base_options = python.BaseOptions(model_asset_path=model_path) # Config features
+
+        options = vision.HandLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.VIDEO,
+            num_hands=1,
+            min_hand_detection_confidence=0.7,
+            min_hand_presence_confidence=0.5,
+            min_tracking_confidence=0.5,
         )
+
+        self.hands = vision.HandLandmarker.create_from_options(options)
+        # self.hands = mp_hands.Hands(
+        # static_image_mode=False,
+        # max_num_hands=1,
+        # min_detection_confidence=0.7,
+        # min_tracking_confidence=0.5,
+        # )
         
         self.keypoint_classifier = KeyPointClassifier()
 
@@ -40,7 +60,7 @@ class GestureDetection():
         (self.grabbed, self.frame) = self.stream.read()
         self.stopped = False
         self.switch = "Gesture"
-        self.plc_connection = plc_connection
+        self.pi_connection = pi_connection
 
     # Prepocess functions of landmarks and arguments
     def draw_landmarks(self, image, landmark_point):
@@ -266,46 +286,115 @@ class GestureDetection():
         landmark_point = []
 
         # Keypoint
-        for _, landmark in enumerate(landmarks.landmark):
+        for landmark in landmarks:
             landmark_x = min(int(landmark.x * image_width), image_width - 1)
             landmark_y = min(int(landmark.y * image_height), image_height - 1)
-            # landmark_z = landmark.z
 
             landmark_point.append([landmark_x, landmark_y])
 
         return landmark_point
-    # Process video streaming
+
+        # for _, landmark in enumerate(landmarks.landmark):
+        #     landmark_x = min(int(landmark.x * image_width), image_width - 1)
+        #     landmark_y = min(int(landmark.y * image_height), image_height - 1)
+        #     # landmark_z = landmark.z
+
+        #     landmark_point.append([landmark_x, landmark_y])
+
+        # return landmark_point
+    
+    # Process video streaming (updated to task api)
     def process_video(self):
         if self.switch == "Gesture":
             try:
                 (self.grabbed, self.frame) = self.stream.read()
-                data = cv.flip(self.frame, 2)
-                data = cv.cvtColor(data, cv.COLOR_BGR2RGB)
-                result = self.hands.process(data)
+                if not self.grabbed:
+                    return
+
+                frame = cv.flip(self.frame, 2)
+                rgb_frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+
+                # Convert to MediaPipe Image
+                mp_image = mp.Image(
+                    image_format=mp.ImageFormat.SRGB,
+                    data=rgb_frame
+                )
+
+                # Timestamp required for VIDEO mode
+                timestamp_ms = int(time.time() * 1000)
+
+                result = self.hands.detect_for_video(mp_image, timestamp_ms)
+
                 fps = self.fps.get()
 
-                if result.multi_hand_landmarks is not None:
-                    for hand_landmarks, handedness in zip(result.multi_hand_landmarks, result.multi_handedness):
-                        landmark_list = self.calc_landmark_list(data, hand_landmarks)
+                if result.hand_landmarks:
+                    for hand_landmarks, handedness in zip(
+                            result.hand_landmarks,
+                            result.handedness):
+
+                        # Convert normalized landmarks to pixel coordinates
+                        landmark_list = self.calc_landmark_list(rgb_frame, hand_landmarks)
+
                         pre_processed_landmark_list = self.pre_process_landmark(landmark_list)
+
                         # Hand sign classification
                         hand_sign_id = self.keypoint_classifier(pre_processed_landmark_list)
-                        command = self.mapGesture(self.keypoint_classifier_labels[hand_sign_id])
-                        #print(command, "tipo: ", type(command))
-                        self.detectTrigger(hand_sign_id, handedness, data, command)
-                        data = self.draw_landmarks(data, landmark_list)
-                else: 
+
+                        command = self.mapGesture(
+                            self.keypoint_classifier_labels[hand_sign_id]
+                        )
+
+                        self.detectTrigger(hand_sign_id, handedness, rgb_frame, command)
+
+                        rgb_frame = self.draw_landmarks(rgb_frame, landmark_list)
+
+                else:
                     self.detectTrigger(sign_id=-1, handedness=None, data=None, command=None)
 
-                data = self.draw_info(data, fps)
-                data = data.ravel()
-                data = np.asarray(data, dtype='f') 
-                texture_data = np.true_divide(data, 255.0)
+                rgb_frame = self.draw_info(rgb_frame, fps)
+
+                # Convert for DearPyGui texture
+                texture_data = rgb_frame.astype(np.float32) / 255.0
+                texture_data = texture_data.ravel()
+
                 dpg.set_value("Cam 1", texture_data)
+
             except Exception as e:
                 print("The process video Failed")
                 self.history.save_error("The process video Failed")
                 print("Cause", e)
+
+    # def process_video(self):
+    #     if self.switch == "Gesture":
+    #         try:
+    #             (self.grabbed, self.frame) = self.stream.read()
+    #             data = cv.flip(self.frame, 2)
+    #             data = cv.cvtColor(data, cv.COLOR_BGR2RGB)
+    #             result = self.hands.process(data)
+    #             fps = self.fps.get()
+
+    #             if result.multi_hand_landmarks is not None:
+    #                 for hand_landmarks, handedness in zip(result.multi_hand_landmarks, result.multi_handedness):
+    #                     landmark_list = self.calc_landmark_list(data, hand_landmarks)
+    #                     pre_processed_landmark_list = self.pre_process_landmark(landmark_list)
+    #                     # Hand sign classification
+    #                     hand_sign_id = self.keypoint_classifier(pre_processed_landmark_list)
+    #                     command = self.mapGesture(self.keypoint_classifier_labels[hand_sign_id])
+    #                     #print(command, "tipo: ", type(command))
+    #                     self.detectTrigger(hand_sign_id, handedness, data, command)
+    #                     data = self.draw_landmarks(data, landmark_list)
+    #             else: 
+    #                 self.detectTrigger(sign_id=-1, handedness=None, data=None, command=None)
+
+    #             data = self.draw_info(data, fps)
+    #             data = data.ravel()
+    #             data = np.asarray(data, dtype='f') 
+    #             texture_data = np.true_divide(data, 255.0)
+    #             dpg.set_value("Cam 1", texture_data)
+    #         except Exception as e:
+    #             print("The process video Failed")
+    #             self.history.save_error("The process video Failed")
+    #             print("Cause", e)
     
     def process_nomal_video(self,):
         if self.switch == "Face":
@@ -316,7 +405,7 @@ class GestureDetection():
                 fps = self.fps.get()
                 data = self.draw_info(data, fps)
                 data = data.ravel()
-                data = np.asfarray(data, dtype='f') 
+                data = np.asarray(data, dtype='f') 
                 texture_data = np.true_divide(data, 255.0)
                 dpg.set_value("Cam 2", texture_data)
             except Exception as e:
@@ -328,7 +417,7 @@ class GestureDetection():
         (self.grabbed, self.frame) = self.stream.read()
         data = cv.flip(self.frame, 2)
         data = cv.cvtColor(data, cv.COLOR_BGR2RGB)
-        data = np.asfarray(data, dtype='f')
+        data = np.asarray(data, dtype='f')
         texture_data = np.true_divide(data, 255.0)
         return texture_data, self.frame
     
@@ -390,7 +479,7 @@ class GestureDetection():
                                 dpg.configure_item("ProgressBar", overlay="Trigger ON")
                                 self.history.save("Trigger command received")
                                 self.trigered = True
-                                self.plc_connection.writeDB(0, 0, True)
+                                self.pi_connection.writeDB(0, 0, True)
                                 self.timemark = time.time()
                                 dpg.set_value("ProgressBar", 1)
                             else:
@@ -417,21 +506,21 @@ class GestureDetection():
             else:
                 if command != None:
                     self.history.save(command + " command received")
-                    self.plc_connection.sendCommand(0, self.mapBit(command))
+                    self.pi_connection.sendCommand(0, self.mapBit(command))
                     
                 #dpg.set_value("Trigger", "Trigger OFF")
                 dpg.configure_item("ProgressBar", overlay="Trigger OFF")
                 self.history.save("Gesture time out")
                 self.timemark = 0.0
                 self.trigered = False
-                self.plc_connection.writeDB(0, 0, False)
-                #self.plc_connection.writeDB(0, self.mapBit(command), False)
+                self.pi_connection.writeDB(0, 0, False)
+                #self.pi_connection.writeDB(0, self.mapBit(command), False)
                 dpg.set_value("Gesture", "")
                 
     def setupFaceModel(self, frame):
         inicio = time.time()
         try:
-            model = "data/user_db/representations_vgg_face.pkl"
+            model = "data/user_db/ds_model_vggface_detector_opencv_aligned_normalization_base_expand_0.pkl"
             os.remove(model)
             result = DeepFace.find(frame, db_path="./data/user_db/", enforce_detection=False)
             fin = time.time()
@@ -447,8 +536,16 @@ class GestureDetection():
             result = DeepFace.find(frame, db_path="./data/user_db/", enforce_detection=False)
             fin = time.time()
             print(result, "Tiempo de ejecución ===>"+str(fin-inicio))
-            result = result[0].values.tolist() 
-            return result[0]['confidence'].item()
+            #result = result[0].values.tolist() 
+            if not result or len(result[0]) == 0:
+                print("No face match found")
+                return None
+            
+            resultdf = result[0]
+
+            confidence = resultdf.iloc[0]["confidence"]
+            return float(confidence)
+            #return result[0]['confidence'].item()
         except Exception:
             print(Exception)
     
@@ -456,6 +553,9 @@ class GestureDetection():
         inicio = time.time()
         try:
             auth_value = self.modelFace(frame=frame)
+            if auth_value is None:
+                print("Auth returned None")
+                return "No face detected", False
             if  auth_value >= 90:
                 fin = time.time()
                 print("Autorizado", "Tiempo de ejecución auth ===>"+str(fin-inicio))
