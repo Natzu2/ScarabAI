@@ -35,7 +35,9 @@ class PiCrawlerConnect:
                 self.picrawler_available = True
             except ImportError:
                 print("⚠ Warning: Running on Raspberry Pi but picrawler library not found.")
-                print("  Install it with: pip install picrawler")
+                print("  Install it with: git clone --depth 1 https://github.com/sunfounder/picrawler.git")
+                print("  cd picrawler")
+                print("  sudo python3 setup.py install")
                 # NOTE: is_raspberry_pi stays True — we ARE on a Pi, just missing the library
 
     def _detect_raspberry_pi(self) -> bool:
