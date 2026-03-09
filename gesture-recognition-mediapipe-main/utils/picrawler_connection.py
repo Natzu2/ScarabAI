@@ -10,6 +10,15 @@ import os
 import sys
 from typing import TYPE_CHECKING
 
+# Maps command bits (from mapBit) to PiCrawler action names
+BIT_TO_ACTION = {
+    0: "stand",        # Trigger
+    1: "sit",          # Stop
+    2: "wave_hand",    # Start
+    3: "play_dead",    # End production
+    4: "nod",          # Alarm Reset
+}
+
 class PiCrawlerConnect:
     """
     Smart connection handler that works both locally (on Pi) and remotely (over network)
@@ -25,7 +34,7 @@ class PiCrawlerConnect:
 
         # Detect the environment first, separately from library availability
         self.is_raspberry_pi = self._detect_raspberry_pi()
-        self.picrawler_available = False  # ← tracks library separately from hardware detection
+        self.picrawler_available = False
 
         # Only attempt to import picrawler on Raspberry Pi
         if self.is_raspberry_pi:
@@ -38,16 +47,19 @@ class PiCrawlerConnect:
                 print("  Install it with: git clone --depth 1 https://github.com/sunfounder/picrawler.git")
                 print("  cd picrawler")
                 print("  sudo python3 setup.py install")
-                # NOTE: is_raspberry_pi stays True — we ARE on a Pi, just missing the library
+
+        # Eagerly attempt the network connection at startup so the first gesture
+        # command does not pay the connection cost in the middle of the UI loop.
+        # If the Pi is not reachable yet, this fails silently — _send_network_command
+        # will reconnect automatically on the first real command.
+        if not self.is_raspberry_pi:
+            self.connection()
 
     def _detect_raspberry_pi(self) -> bool:
         """
         Robustly detect if code is running on a Raspberry Pi.
-        Uses multiple independent checks so no single missing file causes a false negative.
         Returns True only if at least one check confirms Raspberry Pi hardware/OS.
         """
-
-        # Check 1: /proc/cpuinfo — contains hardware model string on real Pi hardware
         try:
             with open("/proc/cpuinfo", "r") as f:
                 cpuinfo = f.read()
@@ -57,7 +69,6 @@ class PiCrawlerConnect:
         except OSError:
             pass
 
-        # Check 2: /etc/os-release — Raspberry Pi OS identifies itself as 'raspbian' or 'raspberry'
         try:
             with open("/etc/os-release", "r") as f:
                 os_release = f.read().lower()
@@ -67,7 +78,6 @@ class PiCrawlerConnect:
         except OSError:
             pass
 
-        # Check 3: Device tree model file — most explicit hardware identifier, present on all Pi models
         try:
             with open("/sys/firmware/devicetree/base/model", "r") as f:
                 model = f.read().lower()
@@ -77,7 +87,6 @@ class PiCrawlerConnect:
         except OSError:
             pass
 
-        # Check 4: /proc/device-tree/model — alternative path used on some Pi OS versions
         try:
             with open("/proc/device-tree/model", "r") as f:
                 model = f.read().lower()
@@ -140,7 +149,11 @@ class PiCrawlerConnect:
             return None
 
     def _connect_network(self):
-        """Network connection for remote machines"""
+        """
+        Network connection for remote machines.
+        The Pi server keeps the connection alive per client (while True loop),
+        so we maintain a single persistent socket for the session.
+        """
         try:
             if self.socket is None:
                 robot_ip = self.config.get("ip_address")
@@ -154,7 +167,7 @@ class PiCrawlerConnect:
 
                 print(f"🔗 Connecting to PiCrawler at {robot_ip}:{robot_port}...")
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.socket.settimeout(5)
+                self.socket.settimeout(10)
                 self.socket.connect((robot_ip, robot_port))
 
             self.is_connected = True
@@ -185,18 +198,134 @@ class PiCrawlerConnect:
             return self
         return None
 
-    def _send_network_command(self, command_dict):
-        """Send command over network"""
+    def _reset_socket(self):
+        """
+        Internal helper: close and clear the broken socket so the next call
+        to _connect_network() creates a fresh one.
+        """
+        self.is_connected = False
         try:
-            command_json = json.dumps(command_dict)
-            self.socket.sendall(command_json.encode("utf-8"))
-            response = self.socket.recv(1024).decode("utf-8")
-            return json.loads(response)
+            self.socket.close()
+        except Exception:
+            pass
+        self.socket = None
+
+    def _recv_message(self):
+        """
+        Read a complete newline-delimited JSON response from the socket.
+
+        TCP does not guarantee that one send() arrives as one recv(), so a
+        raw recv(1024) can return a partial JSON string and crash json.loads().
+        Both client and server terminate every message with '\\n', and this
+        method accumulates chunks until the delimiter is found before parsing.
+
+        Returns the parsed response dict, or raises an exception on error.
+        """
+        buffer = ""
+        while True:
+            chunk = self.socket.recv(1024).decode("utf-8")
+            if not chunk:
+                raise ConnectionError("Server closed the connection while waiting for response")
+            buffer += chunk
+            if "\n" in buffer:
+                message, _ = buffer.split("\n", 1)
+                return json.loads(message)
+
+    def _send_network_command(self, command_dict):
+        """
+        Send a command over the network socket.
+
+        Every message is terminated with a newline ('\\n') so both sides can
+        reliably frame JSON over TCP regardless of packet boundaries.
+
+        The Pi server closes the socket after each client session, so the
+        connection may drop between gesture commands. This method handles
+        that transparently: if the send or receive fails it resets the socket,
+        reconnects once, and retries before giving up.
+
+        The Pi server responds inconsistently:
+          - action/move → {"status": "success", ...}
+          - status/errors → {"success": True/False, ...}
+        Both forms are normalised here into {"success": True/False}.
+        """
+        # Attempt the command; if it fails, reconnect once and retry.
+        for attempt in range(2):
+            try:
+                # Ensure we have an open socket before sending
+                if self.socket is None or not self.is_connected:
+                    print(f"🔗 Socket not open — reconnecting (attempt {attempt + 1})...")
+                    result = self._connect_network()
+                    if result is None:
+                        # Could not reconnect; no point retrying
+                        return {"success": False}
+
+                # Newline delimiter lets the server frame the message correctly
+                command_json = json.dumps(command_dict) + "\n"
+                self.socket.sendall(command_json.encode("utf-8"))
+                self.socket.settimeout(15)               # wait up to 15s for the robot to respond
+                response = self._recv_message()
+                self.socket.settimeout(None)             # back to blocking for next command
+
+                # Normalise: server uses "status":"success" for actions but "success":bool elsewhere
+                if "success" not in response:
+                    response["success"] = (response.get("status") == "success")
+
+                return response
+
+            except Exception as e:
+                print(f"✗ Network error sending {command_dict.get('type', '?')} (attempt {attempt + 1}): {e}")
+                self._reset_socket()
+                # On the first failure we loop back and retry once;
+                # on the second failure we fall through and return failure.
+
+        print(f"✗ Command '{command_dict.get('type', '?')}' failed after reconnect attempt.")
+        return {"success": False}
+
+    # ==================== GESTURE DETECTION INTERFACE ====================
+
+    def writeDB(self, db_index, bit, value: bool):
+        """
+        Called by GestureDetection.detectTrigger() to signal trigger ON/OFF.
+        
+        Usage in detectTrigger:
+            self.pi_connection.writeDB(0, 0, True)   # Trigger activated
+            self.pi_connection.writeDB(0, 0, False)  # Trigger deactivated
+
+        Maps trigger ON → robot stands up, trigger OFF → robot sits down.
+        """
+        try:
+            if value:
+                print(f"[writeDB] Trigger ON  (db={db_index}, bit={bit})")
+                self.stand()
+            else:
+                print(f"[writeDB] Trigger OFF (db={db_index}, bit={bit})")
+                self.sit()
         except Exception as e:
-            print(f"✗ Network error: {e}")
-            self.is_connected = False
-            self.socket = None
-            return {"success": False}
+            print(f"✗ writeDB error: {e}")
+
+    def sendCommand(self, db_index, bit):
+        """
+        Called by GestureDetection.detectTrigger() when a gesture command fires.
+
+        Usage in detectTrigger:
+            self.pi_connection.sendCommand(0, self.mapBit(command))
+
+        mapBit returns:
+            0 → Trigger      → stand
+            1 → Stop         → sit
+            2 → Start        → wave_hand
+            3 → End prod.    → play_dead
+            4 → Alarm Reset  → nod
+        """
+        try:
+            action = BIT_TO_ACTION.get(bit)
+            if action:
+                print(f"[sendCommand] db={db_index}, bit={bit} → action='{action}'")
+                self.executeAction(action)
+            else:
+                print(f"✗ sendCommand: unknown bit {bit}")
+        except Exception as e:
+            print(f"✗ sendCommand error: {e}")
 
     # ==================== ACTION METHODS ====================
 
@@ -317,8 +446,8 @@ class PiCrawlerConnect:
         return {
             "connected": self.is_connected,
             "connection_type": self.connection_type,
-            "is_raspberry_pi": self.is_raspberry_pi,        # hardware/OS detection
-            "picrawler_available": self.picrawler_available, # library detection (separate!)
+            "is_raspberry_pi": self.is_raspberry_pi,
+            "picrawler_available": self.picrawler_available,
             "config_loaded": bool(self.config),
         }
 

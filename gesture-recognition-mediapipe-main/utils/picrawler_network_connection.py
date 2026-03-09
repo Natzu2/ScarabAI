@@ -23,7 +23,8 @@ class PiCrawlerConnect:
         try:
             with open(self.config_path) as jsonfile:
                 settings = json.load(jsonfile)
-                crawler_settings = settings.get("crawler_info", {})
+                # Key corrected from "crawler_info" to "picrawler_info" to match GestureSettings.json
+                crawler_settings = settings.get("picrawler_info", {})
                 self.robot_ip = crawler_settings.get("ip_address")
                 self.robot_port = crawler_settings.get("port", 5005)  # Default port
                 return True
@@ -67,5 +68,3 @@ class PiCrawlerConnect:
         except Exception as e:
             print(f"Error sending command to PiCrawler: {e}")
             return None
-        
-        
