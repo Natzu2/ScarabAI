@@ -3,11 +3,8 @@ import json
 import time
 
 class PiCrawlerConnect:
-    """
-    Network connection handler for PiCrawler device over wifi/Bluetooth
-    Runs on the main pc.
-    """
-
+    # Network connection handler for PiCrawler device over wifi/Bluetooth
+    # Runs on the main pc.
     def __init__(self, config_path= "data/GestureSettings.json"):
         self.config_path = config_path
         self.config = {}
@@ -17,9 +14,7 @@ class PiCrawlerConnect:
         self.robot_port = None
 
     def getDeviceInfo(self):
-        """
-        Load PiCrawler network configuration from a JSON file.
-        """
+        # Load PiCrawler connection settings from config file. Returns True if successful.
         try:
             with open(self.config_path) as jsonfile:
                 settings = json.load(jsonfile)
@@ -33,9 +28,7 @@ class PiCrawlerConnect:
             return False
         
     def connection(self):
-        """
-        Establish a network connection to the PiCrawler on Rapsberry Pi.
-        """
+        # Establish a network connection to the PiCrawler device using IP and port from config.
         try:
             if not self.is_connected:
                 self.getDeviceInfo()
@@ -50,11 +43,7 @@ class PiCrawlerConnect:
             return None
         
     def sendCommand(self, command_dict):
-        """
-        Send a command to the PiCrawler device as a JSON string.
-        
-        :param command_dict: A dictionary containing the command details.
-        """
+       # Send a command to PiCrawler as a JSON string and wait for a response. Returns the response as a dict.
         try:
             sock = self.connection()
             if not sock:
