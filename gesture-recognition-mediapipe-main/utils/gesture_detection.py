@@ -62,6 +62,11 @@ class GestureDetection():
         self.switch = "Gesture"
         self.pi_connection = pi_connection
 
+        # Immediate command dispatch with cooldown
+        self.last_command = None
+        self.last_command_time = 0.0
+        self.COMMAND_COOLDOWN = 2.0  # seconds between repeated commands
+
     # Prepocess functions of landmarks and arguments
     def draw_landmarks(self, image, landmark_point):
         if len(landmark_point) > 0:
@@ -502,19 +507,28 @@ class GestureDetection():
                     dpg.configure_item("Gesture", color=(0, 0, 0, 255))
                     dpg.bind_item_font("Gesture", "tff-commands")
                     dpg.set_value("Gesture", command)
-                else: dpg.set_value("Gesture", "")
+
+                    # Send command immediately on detection with cooldown
+                    # to avoid flooding the robot every frame
+                    now = time.time()
+                    bit = self.mapBit(command)
+                    if bit is not None:
+                        if command != self.last_command or (now - self.last_command_time) >= self.COMMAND_COOLDOWN:
+                            self.history.save(command + " command received")
+                            self.pi_connection.sendCommand(0, bit)
+                            self.last_command = command
+                            self.last_command_time = now
+                else:
+                    dpg.set_value("Gesture", "")
             else:
-                if command != None:
-                    self.history.save(command + " command received")
-                    self.pi_connection.sendCommand(0, self.mapBit(command))
-                    
-                #dpg.set_value("Trigger", "Trigger OFF")
+                # Gesture window expired - reset trigger
                 dpg.configure_item("ProgressBar", overlay="Trigger OFF")
                 self.history.save("Gesture time out")
                 self.timemark = 0.0
                 self.trigered = False
+                self.last_command = None
+                self.last_command_time = 0.0
                 self.pi_connection.writeDB(0, 0, False)
-                #self.pi_connection.writeDB(0, self.mapBit(command), False)
                 dpg.set_value("Gesture", "")
                 
     def setupFaceModel(self, frame):
