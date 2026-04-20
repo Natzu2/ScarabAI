@@ -12,18 +12,16 @@ from typing import TYPE_CHECKING
 
 # Maps command bits (from mapBit) to PiCrawler action names
 BIT_TO_ACTION = {
-    0: "stand",        # Trigger
-    1: "sit",          # Stop
-    2: "wave_hand",    # Start
-    3: "play_dead",    # End production
-    4: "nod",          # Alarm Reset
+    0: "stand",      # Trigger
+    1: "sit",        # Stop
+    2: "backward",       # Start
+    3: "forward",    # End production
+    4: "push_up",    # Alarm Reset
 }
+# ==================== INITIALIZATION & CONNECTION ====================
 
 class PiCrawlerConnect:
-    """
-    Smart connection handler that works both locally (on Pi) and remotely (over network)
-    """
-
+    # Initializes the connection to PiCrawler, either directly (if on Raspberry Pi with library) or over network.
     def __init__(self, config_path="data/GestureSettings.json"):
         self.config_path = config_path
         self.config = {}
@@ -43,7 +41,7 @@ class PiCrawlerConnect:
                 self.Picrawler = Picrawler
                 self.picrawler_available = True
             except ImportError:
-                print("⚠ Warning: Running on Raspberry Pi but picrawler library not found.")
+                print("Warning: Running on Raspberry Pi but picrawler library not found.")
                 print("  Install it with: git clone --depth 1 https://github.com/sunfounder/picrawler.git")
                 print("  cd picrawler")
                 print("  sudo python3 setup.py install")
@@ -56,10 +54,7 @@ class PiCrawlerConnect:
             self.connection()
 
     def _detect_raspberry_pi(self) -> bool:
-        """
-        Robustly detect if code is running on a Raspberry Pi.
-        Returns True only if at least one check confirms Raspberry Pi hardware/OS.
-        """
+        # Detect if running on Raspberry Pi by checking multiple system files for known identifiers.
         try:
             with open("/proc/cpuinfo", "r") as f:
                 cpuinfo = f.read()
@@ -99,25 +94,20 @@ class PiCrawlerConnect:
         return False
 
     def getDeviceInfo(self):
-        """Load configuration from JSON"""
+       # Load PiCrawler connection settings from config file. Returns True if successful.
         try:
             with open(self.config_path) as jsonfile:
                 settings = json.load(jsonfile)
                 self.config = settings.get("picrawler_info", {})
                 return True
         except FileNotFoundError:
-            print(f"✗ Config file not found: {self.config_path}")
+            print(f"Config file not found: {self.config_path}")
             return False
         except json.JSONDecodeError:
-            print(f"✗ Invalid JSON in config file: {self.config_path}")
+            print(f"Invalid JSON in config file: {self.config_path}")
             return False
 
     def connection(self):
-        """
-        Establish connection using appropriate method:
-        - Direct: If running on Raspberry Pi with picrawler library available
-        - Network: If running on a remote machine (or Pi without the library)
-        """
         if self.is_connected:
             return self.get_crawler_object()
 
@@ -128,11 +118,11 @@ class PiCrawlerConnect:
             return self._connect_direct()
         else:
             if self.is_raspberry_pi and not self.picrawler_available:
-                print("⚠ On Raspberry Pi but picrawler library unavailable — falling back to network mode.")
+                print("On Raspberry Pi but picrawler library unavailable — falling back to network mode.")
             return self._connect_network()
 
     def _connect_direct(self):
-        """Direct connection for Raspberry Pi"""
+        
         try:
             if self.crawler is None:
                 init_angles = self.config.get("init_angles", None)
@@ -141,28 +131,23 @@ class PiCrawlerConnect:
 
             self.is_connected = True
             self.connection_type = "direct"
-            print("✓ Connected to PiCrawler (Direct/Local)")
+            print("Connected to PiCrawler (Direct/Local)")
             return self.crawler
 
         except Exception as e:
-            print(f"✗ Failed to connect directly: {e}")
+            print(f"Failed to connect directly: {e}")
             return None
 
     def _connect_network(self):
-        """
-        Network connection for remote machines.
-        The Pi server keeps the connection alive per client (while True loop),
-        so we maintain a single persistent socket for the session.
-        """
         try:
             if self.socket is None:
                 robot_ip = self.config.get("ip_address")
                 robot_port = self.config.get("port", 5005)
 
                 if not robot_ip:
-                    print("✗ Error: 'ip_address' not set in config")
-                    print("  Please add your Raspberry Pi IP address to data/GestureSettings.json")
-                    print("  Example: '192.168.1.100'")
+                    print("Error: 'ip_address' not set in config")
+                    print("Please add your Raspberry Pi IP address to data/GestureSettings.json")
+                    print("Example: '192.168.1.100'")
                     return None
 
                 print(f"🔗 Connecting to PiCrawler at {robot_ip}:{robot_port}...")
@@ -176,18 +161,18 @@ class PiCrawlerConnect:
             return self
 
         except socket.timeout:
-            print(f"✗ Connection timeout: Cannot reach PiCrawler at {self.config.get('ip_address')}:{self.config.get('port', 5005)}")
+            print(f"Connection timeout: Cannot reach PiCrawler at {self.config.get('ip_address')}:{self.config.get('port', 5005)}")
             print("  Make sure:")
             print("  1. The Raspberry Pi is powered on and connected to WiFi")
             print("  2. The IP address in config is correct")
             print("  3. picrawler_server.py is running on the Pi")
             return None
         except ConnectionRefusedError:
-            print("✗ Connection refused: PiCrawler server not running on Pi")
+            print("Connection refused: PiCrawler server not running on Pi")
             print("  Run this on the Raspberry Pi: sudo python3 picrawler_server.py")
             return None
         except Exception as e:
-            print(f"✗ Failed to connect over network: {e}")
+            print(f"Failed to connect over network: {e}")
             return None
 
     def get_crawler_object(self):
@@ -199,10 +184,6 @@ class PiCrawlerConnect:
         return None
 
     def _reset_socket(self):
-        """
-        Internal helper: close and clear the broken socket so the next call
-        to _connect_network() creates a fresh one.
-        """
         self.is_connected = False
         try:
             self.socket.close()
@@ -211,16 +192,6 @@ class PiCrawlerConnect:
         self.socket = None
 
     def _recv_message(self):
-        """
-        Read a complete newline-delimited JSON response from the socket.
-
-        TCP does not guarantee that one send() arrives as one recv(), so a
-        raw recv(1024) can return a partial JSON string and crash json.loads().
-        Both client and server terminate every message with '\\n', and this
-        method accumulates chunks until the delimiter is found before parsing.
-
-        Returns the parsed response dict, or raises an exception on error.
-        """
         buffer = ""
         while True:
             chunk = self.socket.recv(1024).decode("utf-8")
@@ -232,22 +203,6 @@ class PiCrawlerConnect:
                 return json.loads(message)
 
     def _send_network_command(self, command_dict):
-        """
-        Send a command over the network socket.
-
-        Every message is terminated with a newline ('\\n') so both sides can
-        reliably frame JSON over TCP regardless of packet boundaries.
-
-        The Pi server closes the socket after each client session, so the
-        connection may drop between gesture commands. This method handles
-        that transparently: if the send or receive fails it resets the socket,
-        reconnects once, and retries before giving up.
-
-        The Pi server responds inconsistently:
-          - action/move → {"status": "success", ...}
-          - status/errors → {"success": True/False, ...}
-        Both forms are normalised here into {"success": True/False}.
-        """
         # Attempt the command; if it fails, reconnect once and retry.
         for attempt in range(2):
             try:
@@ -301,21 +256,11 @@ class PiCrawlerConnect:
                 print(f"[writeDB] Trigger OFF (db={db_index}, bit={bit})")
                 self.sit()
         except Exception as e:
-            print(f"✗ writeDB error: {e}")
+            print(f"writeDB error: {e}")
 
     def sendCommand(self, db_index, bit):
         """
         Called by GestureDetection.detectTrigger() when a gesture command fires.
-
-        Usage in detectTrigger:
-            self.pi_connection.sendCommand(0, self.mapBit(command))
-
-        mapBit returns:
-            0 → Trigger      → stand
-            1 → Stop         → sit
-            2 → Start        → wave_hand
-            3 → End prod.    → play_dead
-            4 → Alarm Reset  → nod
         """
         try:
             action = BIT_TO_ACTION.get(bit)
@@ -323,9 +268,9 @@ class PiCrawlerConnect:
                 print(f"[sendCommand] db={db_index}, bit={bit} → action='{action}'")
                 self.executeAction(action)
             else:
-                print(f"✗ sendCommand: unknown bit {bit}")
+                print(f"sendCommand: unknown bit {bit}")
         except Exception as e:
-            print(f"✗ sendCommand error: {e}")
+            print(f"sendCommand error: {e}")
 
     # ==================== ACTION METHODS ====================
 
@@ -339,27 +284,27 @@ class PiCrawlerConnect:
             if self.connection_type == "direct":
                 if action_name in crawler.move_list:
                     crawler.do(crawler.move_list[action_name])
-                    print(f"✓ Action executed: {action_name}")
+                    print(f"Action executed: {action_name}")
                     return True
                 else:
-                    print(f"✗ Unknown action: {action_name}")
+                    print(f"Unknown action: {action_name}")
                     return False
 
             elif self.connection_type == "network":
                 command = {"type": "action", "action": action_name}
                 response = self._send_network_command(command)
                 if response and response.get("success"):
-                    print(f"✓ Action executed: {action_name}")
+                    print(f"Action executed: {action_name}")
                     return True
 
             return False
         except Exception as e:
-            print(f"✗ Cannot execute action: {e}")
+            print(f"Cannot execute action: {e}")
             return False
 
     def stand(self):        return self.executeAction("stand")
     def sit(self):          return self.executeAction("sit")
-    def wave(self):         return self.executeAction("wave_hand")
+    def wave(self):         return self.executeAction("wave")
     def nod(self):          return self.executeAction("nod")
     def shake_head(self):   return self.executeAction("shake_head")
     def excited(self):      return self.executeAction("excited")
@@ -396,7 +341,7 @@ class PiCrawlerConnect:
 
             return False
         except Exception as e:
-            print(f"✗ Cannot move leg: {e}")
+            print(f"Cannot move leg: {e}")
             return False
 
     def setAllLegsCoordinates(self, coords):
@@ -408,19 +353,19 @@ class PiCrawlerConnect:
 
             if self.connection_type == "direct":
                 crawler.move(coords)
-                print("✓ All legs moved")
+                print("All legs moved")
                 return True
 
             elif self.connection_type == "network":
                 command = {"type": "move_all", "coords": coords}
                 response = self._send_network_command(command)
                 if response and response.get("success"):
-                    print("✓ All legs moved")
+                    print("All legs moved")
                     return True
 
             return False
         except Exception as e:
-            print(f"✗ Cannot move legs: {e}")
+            print(f"Cannot move legs: {e}")
             return False
 
     # ==================== UTILITY METHODS ====================
@@ -463,6 +408,6 @@ class PiCrawlerConnect:
             self.crawler = None
             self.socket = None
             self.is_connected = False
-            print("✓ PiCrawler connection closed")
+            print("PiCrawler connection closed")
         except Exception as e:
-            print(f"⚠ Error closing connection: {e}")
+            print(f"Error closing connection: {e}")
