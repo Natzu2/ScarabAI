@@ -108,6 +108,7 @@ class PiCrawlerConnect:
             return False
 
     def connection(self):
+        # Get the appropriate connection object (crawler instance for direct, self for network) based on environment and availability.
         if self.is_connected:
             return self.get_crawler_object()
 
@@ -122,7 +123,7 @@ class PiCrawlerConnect:
             return self._connect_network()
 
     def _connect_direct(self):
-        
+        # Attempt to connect directly using the picrawler library. This only works if running on Raspberry Pi with the library installed.
         try:
             if self.crawler is None:
                 init_angles = self.config.get("init_angles", None)
@@ -139,6 +140,7 @@ class PiCrawlerConnect:
             return None
 
     def _connect_network(self):
+        # Attempt to connect over the network to a PiCrawler server running on the Raspberry Pi. This works if the Pi is reachable and picrawler_server.py is running.
         try:
             if self.socket is None:
                 robot_ip = self.config.get("ip_address")
@@ -176,7 +178,7 @@ class PiCrawlerConnect:
             return None
 
     def get_crawler_object(self):
-        """Get the appropriate crawler object"""
+        # Return the appropriate object for sending commands based on connection type.
         if self.connection_type == "direct":
             return self.crawler
         elif self.connection_type == "network":
